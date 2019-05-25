@@ -11,14 +11,14 @@
 
 #define MIN(x,y) ((x)<(y)?(x):(y))
 #define MAX(x,y) ((x)>(y)?(x):(y))
-#define TMALLOC(type,size) ((type*)malloc(sizeof(type)*size))
+#define TMALLOC(type,size) ((type*)malloc(sizeof(type)*(size)))
 
 //Maximum size for full calculation. Full calculation could require 2^n (bytes) space and less than O(2.5^n) time
 #define MAXCALCSIZE 30
 
 //masks for CSP
-#define HM (long long)31
-#define VM (long long)69905
+#define HM (long long)0b11111
+#define VM (long long)0b100001000010000100001
 #define MAX_D (long long)5
 
 //using namespace std;
@@ -65,7 +65,7 @@ bool isClique(int* graph, int n)
 	int i, j;
 	for (i = 0; i < n; i++)
 		for (j = 0; j < n; j++)
-			if ((!graph[i * n + j]) && (i != n))
+			if ((!graph[i * n + j]) && (i != j))
 				return false;
 	return true;
 }
@@ -81,9 +81,9 @@ bool isCliqueBit(long long* graph, int n)
 }
 
 //Check if graph is binary, returns colored graph (array with size n) if it is, 0 if it isn't
-int* isBin(int* graph, int n)
+int* isBin(int* cols, int* graph, int n)
 {
-	int i, j, * cols = (int*)malloc(sizeof(int) * n), * tovisit = (int*)malloc(sizeof(int) * n), top = 1;
+	int i, j, * tovisit = (int*)malloc(sizeof(int) * n), top = 1;
 	for (i = 1; i < n; i++)
 	{
 		tovisit[i] = -1;
@@ -115,7 +115,6 @@ int* isBin(int* graph, int n)
 				else
 					if (cols[j] != (cols[tovisit[i]] ^ 1))
 					{
-						free(cols);
 						free(tovisit);
 						return 0;
 					}
@@ -126,7 +125,7 @@ int* isBin(int* graph, int n)
 }
 
 //Check if bit graph is binary, returns colored graph (array with size n) if it is, 0 if it isn't
-int* isBinBit(long long* graph, int n)
+bool isBinBit(long long* graph, int n)
 {
 	int i, j, * cols = (int*)malloc(sizeof(int) * n), * tovisit = (int*)malloc(sizeof(int) * n), top = 1;
 	for (i = 1; i < n; i++)
@@ -163,7 +162,8 @@ int* isBinBit(long long* graph, int n)
 			}
 	}
 	free(tovisit);
-	return cols;
+	free(cols);
+	return 1;
 }
 
 //converts initMask, reduced by Mask into full mask
@@ -176,6 +176,7 @@ long long convToFullMask(long long initMask, long long Mask, int Mn, int n)
 			Mn--;
 			res |= (initMask & ((long long)1 << Mn)) << (i - Mn);
 		}
+	return res;
 }
 
 //Bron-Kerbosh algorithm for finding all cliques in the graph. Graph must be converted into bit graph
@@ -198,26 +199,29 @@ void BronKerbosh(long long* output, int* oun, long long* graph, int n, long long
 int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 {
 	//at this this point every "connected" vertex is not directly constrained by each other 
-	//probably correctness of chosen colouring is determined with the first choice
+	//FOR SOME REASON UNCONNECTED ONES DON'T SEEM TO ALWAYS GET COLOURED ON A FIRST TRY, need inestigation  
 	//but I check for all outcomes for some reason *shrug*
 	//also, this version of algorithm assumes d=3, so all those vertices are full
 	int* availbckp = TMALLOC(int, n), tav, * filstack = TMALLOC(int, n), filsize = 0, curfil = 0;
 	long long t, tk;
 	for (int i = 0; i < n; i++)
 	{
-		if (conn[i])
+		t = avail[i];
+		t = (t & 21) + ((t & 42) >> 1);
+		t = (t & 3) + ((t & 12) >> 2) + ((t & 48) >> 4);
+		if ((conn[i])&&(t==d))
 		{
-			filsize = 0;
-			curfil = 0;
-			conn[i] = 0;
+			//conn[i] = 0;
 			for (long long k = 0; k < d; k++)
 			{
-				_memccpy(availbckp, avail, n, sizeof(int));
+				filsize = 0;
+				curfil = 0;
+				memcpy(availbckp, avail, n * sizeof(int));
 				avail[i] = 1 << k;
 				for (int j = 0; j < n; j++)
 				{
 					tav = avail[j];
-					avail[j] &= ~((constr[i * n + j] & (HM << (k * 5))) >> (k * 5));
+					avail[j] &= ~((constr[i * n + j] & (HM << (k * MAX_D))) >> (k * MAX_D));
 					if (!avail[j])
 					{
 						goto connchoiceisinvalid;
@@ -232,7 +236,7 @@ int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 				{
 					t = 1;
 					tk = 0;
-					while (!(avail[i] & t))
+					while (!(avail[filstack[curfil]] & t))
 					{
 						t <<= 1;
 						tk++;
@@ -240,7 +244,7 @@ int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 					for (int j = 0; j < n; j++)
 					{
 						tav = avail[j];
-						avail[j] &= ~((constr[filstack[curfil] * n + j] & (HM << (tk * 5))) >> (tk * 5));
+						avail[j] &= ~((constr[filstack[curfil] * n + j] & (HM << (tk * MAX_D))) >> (tk * MAX_D));
 						if (!avail[j])
 						{
 							goto connchoiceisinvalid;
@@ -258,13 +262,13 @@ int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 					return avail;
 				}
 			connchoiceisinvalid:
-				_memccpy(avail, availbckp, n, sizeof(int));
+				memcpy(avail, availbckp, n * sizeof(int));
 			}
 
 			//if it reaches this place, it means that previously chosen colourings are invalid
 			free(availbckp);
 			free(filstack);
-			conn[i] = 1;
+			//conn[i] = 1;
 			return 0;
 		}
 	}
@@ -283,23 +287,23 @@ int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 		if (t > 1)
 		{
 			//some weren't connected but weren't coloured yet either, should only have 2 choices of colour
-			filsize = 0;
-			curfil = 0;
 			t = 1;
 			tk = 0;
 			for (long long k = 0; k < 2; k++)
 			{
+				filsize = 0;
+				curfil = 0;
 				while (!(avail[i] & t))
 				{
 					t <<= 1;
 					tk++;
 				}
-				_memccpy(availbckp, avail, n, sizeof(int));
-				avail[i] = 1 << k;
+				memcpy(availbckp, avail, n * sizeof(int));
+				avail[i] = 1 << tk;
 				for (int j = 0; j < n; j++)
 				{
 					tav = avail[j];
-					avail[j] &= ~((constr[i * n + j] & (HM << (k * 5))) >> (k * 5));
+					avail[j] &= ~((constr[i * n + j] & (HM << (tk * MAX_D))) >> (tk * MAX_D));
 					if (!avail[j])
 					{
 						goto unconnchoiceisinvalid;
@@ -314,7 +318,7 @@ int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 				{
 					int tt = 1;
 					long long ttk = 0;
-					while (!(avail[i] & tt))
+					while (!(avail[filstack[curfil]] & tt))
 					{
 						tt <<= 1;
 						ttk++;
@@ -322,7 +326,7 @@ int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 					for (int j = 0; j < n; j++)
 					{
 						tav = avail[j];
-						avail[j] &= ~((constr[filstack[curfil] * n + j] & (HM << (ttk * 5))) >> (ttk * 5));
+						avail[j] &= ~((constr[filstack[curfil] * n + j] & (HM << (ttk * MAX_D))) >> (ttk * MAX_D));
 						if (!avail[j])
 						{
 							goto unconnchoiceisinvalid;
@@ -340,7 +344,9 @@ int* CSPd2RandFinalizer(long long* constr, int* avail, int* conn, int n, int d)
 					return avail;
 				}
 			unconnchoiceisinvalid:
-				_memccpy(avail, availbckp, n, sizeof(int));
+				memcpy(avail, availbckp, n * sizeof(int));
+				t <<= 1;
+				tk++;
 			}
 
 			//if it reaches this place, it means that previously chosen colourings are invalid
@@ -373,9 +379,26 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 	//this part is less than O(n^4), but each run should reduce number of vertices by at least 1
 	while (wasreduced)
 	{
+		//constraint correctness check
+		for (i = 0; i < n; i++)
+			for (j = 0; j < n; j++)
+				if (constr[i * n + j] && constr[j * n + i])
+				{
+					for  (k1 = 0; k1 < dloc; k1++)
+						for (k2 = 0; k2 < dloc; k2++)
+						{
+							if ((!(constr[i * n + j]&((long long)1<<(k2*MAX_D+k1)))) != (!(constr[j * n + i] & ((long long)1 << (k1 * MAX_D + k2)))))
+								printf("incorrect constraints\n");
+						}
+				}
+				else
+				{
+					if (constr[i * n + j] != constr[j * n + i])
+						printf("incorrect constraints\n");
+				}
 		wasreduced = false;
-		//constraint cleanup
-		for (k = 0; k < dloc; k++)
+		//constraint cleanup, seems to introduce bugs
+		/*for (k = 0; k < dloc; k++)
 		{
 			for (i = 0; i < n; i++)
 			{
@@ -383,36 +406,39 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 				{
 					for (j = 0; j < n; j++)
 					{
-						constr[i * n + j] ^= constr[i * n + j] & (HM << (5 * k));
+						constr[i * n + j] ^= constr[i * n + j] & (HM << (MAX_D * k));
 						constr[j * n + i] ^= constr[j * n + i] & (VM << k);
 					}
 				}
 			}
-		}
+		}*/
 		//reductions
-		for (int i = 0; i < n; i++)
+		for (i = 0; i < n; i++)
 		{
-			if (conn[i])
+			t = avail[i];
+			t = (t & 21) + ((t & 42) >> 1);
+			t = (t & 3) + ((t & 12) >> 2) + ((t & 48) >> 4);
+			if (t == 0) 
+				return 0;
+			if (t == 1)
 			{
-				t = avail[i];
-				t = (t & 21) + ((t & 42) >> 1);
-				t = (t & 3) + ((t & 12) >> 2) + ((t & 48) >> 4);
-				if (t == 0) return 0;
-				if (t == 1)
+				//doing it outside of connectedness check is important because of lemma 2
+				k = 0;
+				while (!(avail[i] & t))
 				{
-					k = 0;
-					while (!(avail[i] & t))
-					{
-						t <<= 1;
-						k++;
-					}
-					for (j = 0; j < n; j++)
-					{
-						avail[j] &= ~((constr[i * n + j] & (HM << (k * 5))) >> (k * 5));
-					}
-					//add cleanup?
+					t <<= 1;
+					k++;
 				}
-				else
+				for (j = 0; j < n; j++)
+				{
+					avail[j] &= ~((constr[i * n + j] & (HM << (k * MAX_D))) >> (k * MAX_D));
+				}
+				//conn[i] = 0;
+				//add constraint cleanup?
+			}
+			else
+			{
+				if (conn[i])
 				{
 					//Lemma6
 					for (k = 0; k < dloc; k++)
@@ -420,7 +446,7 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 						if (avail[i] & (1 << k))
 						{
 							for (int j = 0; j < n; j++)
-								if (conn[j] && ((constr[i * (long long)n + j] & (HM << (k * 5))) == (1 << (dloc - 1))))
+								if (conn[j] && ((constr[i * (long long)n + j] & (HM << (k * MAX_D))) == (1 << (dloc - 1))))
 								{
 									avail[i] ^= (1 << k);
 									//add cleanup
@@ -429,17 +455,18 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 								}
 						}
 					}
-					//Lemma4
+					//Lemma4, possibly bugged
 					for (k1 = 0; k1 < (dloc - 1); k1++)
 						for (k2 = k1 + 1; k2 < dloc; k2++)
 						{
 							if ((avail[i] & (1 << k1)) && (avail[i] & (1 << k2)))
 							{
 								bool canredl = true, canredr = true;
-								long long t1 = (constr[i * (long long)n + j] & (HM << (k1 * 5))) >> (k1 * 5);
-								long long t2 = (constr[i * (long long)n + j] & (HM << (k2 * 5))) >> (k2 * 5);
 								for (int j = 0; j < n; j++)
-									if (conn[j])
+								{
+									long long t1 = (constr[i * (long long)n + j] & (HM << (k1 * MAX_D))) >> (k1 * MAX_D);
+									long long t2 = (constr[i * (long long)n + j] & (HM << (k2 * MAX_D))) >> (k2 * MAX_D);
+									//if (conn[j]) //seems to introduceq bugs
 									{
 										if ((t1 & t2) ^ t1)
 										{
@@ -450,6 +477,7 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 											canredr = false;
 										}
 									}
+								}
 								if (canredl)
 								{
 									avail[i] ^= (1 << k2);
@@ -473,16 +501,16 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 					{
 						wasreduced = true;
 						int fltop = 0, sltop = 0;
-						for (k1 = 0; avail[i] & (1 << k1); k1++);
-						for (k2 = k1 + 1; avail[i] & (1 << k2); k2++);
+						for (k1 = 0; !(avail[i] & (1 << k1)); k1++);
+						for (k2 = k1 + 1; !(avail[i] & (1 << k2)); k2++);
 						for (j = 0; j < n; j++)
 						{
-							if (constr[i * n + j] & (HM << (k1 * 5)))
+							if (constr[i * n + j] & (HM << (k1 * MAX_D)))
 							{
 								flist[fltop] = j;
 								fltop++;
 							}
-							if (constr[i * n + j] & (HM << (k2 * 5)))
+							if (constr[i * n + j] & (HM << (k2 * MAX_D)))
 							{
 								slist[sltop] = j;
 								sltop++;
@@ -494,10 +522,10 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 								{
 									for (t = 0; t < dloc; t++)
 									{
-										if (((constr[i * n + slist[k]] & (HM << (k2 * 5))) >> (k2 * 5)) & (1 << t))
-											constr[slist[k] * n + flist[j]] |= ((constr[i * n + flist[j]] & (HM << (k1 * 5))) >> (k1 * 5)) << (t * 5);
-										if (((constr[i * n + flist[j]] & (HM << (k1 * 5))) >> (k1 * 5)) & (1 << t))
-											constr[flist[j] * n + slist[k]] |= ((constr[i * n + slist[k]] & (HM << (k2 * 5))) >> (k2 * 5)) << (t * 5);
+										if (((constr[i * n + slist[k]] & (HM << (k2 * MAX_D))) >> (k2 * MAX_D)) & (1 << t))
+											constr[slist[k] * n + flist[j]] |= ((constr[i * n + flist[j]] & (HM << (k1 * MAX_D))) >> (k1 * MAX_D)) << (t * MAX_D);
+										if (((constr[i * n + flist[j]] & (HM << (k1 * MAX_D))) >> (k1 * MAX_D)) & (1 << t))
+											constr[flist[j] * n + slist[k]] |= ((constr[i * n + slist[k]] & (HM << (k2 * MAX_D))) >> (k2 * MAX_D)) << (t * MAX_D);
 									}
 								}
 						conn[i] = 0;
@@ -511,7 +539,7 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 						long long p = -1;
 						for (j = 0; j < n; j++)
 						{
-							if (constr[i * (long long)n + j] & (HM << (k1 * 5)))
+							if (constr[i * (long long)n + j] & (HM << (k1 * MAX_D)))
 							{
 								k++;
 								p = j;
@@ -523,12 +551,12 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 							{
 								k = 0;
 								int p = -1;
-								if (!constr[i * (long long)n + p] & ((1 << k2) << (k1 * 5)))
+								if (!constr[i * (long long)n + p] & ((1 << k2) << (k1 * MAX_D)))
 								{
 									bool canred = true;
 									for (j = 0; j < n; j++)
 									{
-										if ((j != i) && (constr[p * (long long)n + j] & (HM << (k2 * 5))))
+										if ((j != i) && (constr[p * (long long)n + j] & (HM << (k2 * MAX_D))))
 										{
 											canred = false;
 											break;
@@ -538,9 +566,15 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 									{
 										avail[i] = 1 << k1;
 										avail[p] = 1 << k2;
-										conn[i] = 0;
-										conn[j] = 0;
-										//add cleanup
+										for (j = 0; j < n; j++)
+										{
+											avail[j] &= ~((constr[i * n + j] & (HM << (k1 * MAX_D))) >> (k1 * MAX_D));
+											avail[j] &= ~((constr[p * n + j] & (HM << (k2 * MAX_D))) >> (k2 * MAX_D));
+											if (avail[j] == 0)
+												j = j;
+										}
+										//conn[i] = 0;
+										//conn[p] = 0;
 										l3fl = false;
 										wasreduced = true;
 										break;
@@ -556,7 +590,7 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 						{
 							bool cancol = true;
 							for (int j = 0; j < n; j++)
-								if (conn[j] && (constr[i * n + j] & (HM << (k * 5))))
+								if (conn[j] && (constr[i * n + j] & (HM << (k * MAX_D))))
 								{
 									cancol = false;
 									break;
@@ -564,7 +598,13 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 							if (cancol)
 							{
 								avail[i] = 1 << k;
-								conn[i] = 0;
+								//conn[i] = 0;
+								for (j = 0; j < n; j++)
+								{
+									avail[j] &= ~((constr[i * n + j] & (HM << (k * MAX_D))) >> (k * MAX_D));
+									if (avail[j] == 0)
+										j = j;
+								}
 								//add cleanup
 								wasreduced = true;
 								break;
@@ -583,22 +623,30 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 		int* connt = (int*)malloc(sizeof(int) * n);
 		long long* constrt = (long long*)malloc(sizeof(long long) * n * n), c1 = -1, c2;
 		for (i = 0; (i < n) && (v1 < 0); i++)
-			if (conn[i])
+		{
+			t = avail[i];
+			t = (t & 21) + ((t & 42) >> 1);
+			t = (t & 3) + ((t & 12) >> 2) + ((t & 48) >> 4);
+			if (conn[i] && t > 2)
 				for (j = 0; j < n; j++)
 				{
-					if (conn[j] && constr[i * n + j])
+					t = avail[j];
+					t = (t & 21) + ((t & 42) >> 1);
+					t = (t & 3) + ((t & 12) >> 2) + ((t & 48) >> 4);
+					if (conn[j] && constr[i * n + j] && t > 2)
 					{
 						v1 = i;
 						v2 = j;
 					}
 				}
+		}
 		if (v1 >= 0)
 		{
 			for (i = 0; (i < dloc) && (c1 < 0); i++)
 				if (avail[v1] & (1 << i))
 					for (j = 0; j < dloc; j++)
 					{
-						if ((avail[v2] & (1 << j)) && (constr[v1 * n + v2] & ((1 << i) << (j * 5))))
+						if ((avail[v2] & (1 << j)) && (constr[v1 * n + v2] & ((1 << i) << (j * MAX_D))))
 						{
 							c1 = i;
 							c2 = j;
@@ -609,9 +657,9 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 		{
 			for (i = 0; i < 4; i++)
 			{
-				_memccpy(availt, avail, 4, n);
-				_memccpy(constrt, constr, 4, n * n);
-				_memccpy(connt, conn, 4, n);
+				memcpy(availt, avail, sizeof(int) * n);
+				memcpy(constrt, constr, sizeof(long long)* n * n);
+				memcpy(connt, conn, sizeof(int)* n);
 				t = rand() % k;
 				for (j = 0; t > 0 && j < 4; j++)
 				{
@@ -623,24 +671,26 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 					k--;
 					if (j & 1)
 					{
-						availt[v1] ^= 1 << c1;
-						availt[v2] ^= 1 << ((c2 + (j >> 1)) % dloc);
+						avail[v1] ^= 1 << c1;
+						avail[v2] ^= 1 << ((c2 + (j >> 1)) % dloc);
 					}
 					else
 					{
-						availt[v1] ^= 1 << ((c1 + (j >> 1)) % dloc);
-						availt[v2] ^= 1 << c2;
+						avail[v1] ^= 1 << ((c1 + (j >> 1)) % dloc);
+						avail[v2] ^= 1 << c2;
 					}
-					availt = CSPd2Solve(constrt, availt, connt, n, dloc);
-					if (availt != 0)
+					if (CSPd2Solve(constrt, avail, connt, n, dloc))
 					{
 						//finisher
-						free(avail);
+						free(availt);
 						free(constrt);
 						free(connt);
 						return availt;
 					}
 				}
+				memcpy(avail, availt, sizeof(int)* n);
+				memcpy(constr, constrt, sizeof(long long)* n* n);
+				memcpy(conn, connt, sizeof(int)* n);
 			}
 		}
 		else
@@ -657,13 +707,13 @@ int* CSPd2Solve(long long* constr, int* avail, int* conn, int n, int d = 3)
 
 //Check if graph is trinary (using David Eppstein's algorithm)
 //Works by optimizing the graph and converting it into Constraint Satisfaction Problem
-int* isTri(int* graph, int n)
+int* isTri(int* cols, int* graph, int n)
 {
-	int i, j, * avail = (int*)malloc(sizeof(int) * n), maxi=-1, max = 0, c, * conn = TMALLOC(int, n);
+	int i, j, maxi=-1, max = 0, c, * conn = TMALLOC(int, n),*ans;
 	long long* constr = TMALLOC(long long, n * n);
-	for (i = 1; i < n; i++)
+	for (i = 0; i < n; i++)
 	{
-		avail[i] = 7;
+		cols[i] = 7;
 		conn[i] = 1;
 		c = 0;
 		for (j = 0; j < n; j++)
@@ -672,6 +722,10 @@ int* isTri(int* graph, int n)
 			{
 				c++;
 				constr[i * n + j] = (long long)1 | ((long long)1 << (MAX_D + 1)) | ((long long)1 << ((MAX_D + 1) * 2));
+			}
+			else
+			{
+				constr[i * n + j] = 0;
 			}
 		}
 		if (c > max)
@@ -684,19 +738,19 @@ int* isTri(int* graph, int n)
 			conn[i] = 0;
 	}
 	//colour the vertex with the max amount of neighbours, thus easily getting rid of max+1 vertices
-	if (maxi > 0)
-		avail[maxi] = 1;
-	CSPd2Solve(constr, avail, conn, n, 3);
+	if (maxi >= 0)
+		cols[maxi] = 1;
+	ans = CSPd2Solve(constr, cols, conn, n, 3);
 	free(constr);
 	free(conn);
-	return avail;
+	return ans;
 }
 
-int* isTriBit(long long* graph, int n)
+bool isTriBit(long long* graph, int n)
 {
-	int i, j, * avail = (int*)malloc(sizeof(int) * n), maxi = -1, max = 0, c, *conn = TMALLOC(int, n);
+	int i, j, * avail = (int*)malloc(sizeof(int) * n), maxi = -1, max = 0, c, *conn = TMALLOC(int, n), *ret;
 	long long* constr = TMALLOC(long long, n * n);
-	for (i = 1; i < n; i++)
+	for (i = 0; i < n; i++)
 	{
 		avail[i] = 7;
 		conn[i] = 1;
@@ -708,6 +762,10 @@ int* isTriBit(long long* graph, int n)
 				c++;
 				constr[i * n + j] = (long long)1 | ((long long)1 << (MAX_D + 1)) | ((long long)1 << ((MAX_D + 1) * 2));
 			}
+			else
+			{
+				constr[i * n + j] = 0;
+			}
 		}
 		if (c > max)
 		{
@@ -721,10 +779,11 @@ int* isTriBit(long long* graph, int n)
 	//colour the vertex with the max amount of neighbours, thus easily getting rid of max+1 vertices
 	if (maxi > 0)
 		avail[maxi] = 1;
-	CSPd2Solve(constr, avail, conn, n, 3);
+	ret = CSPd2Solve(constr, avail, conn, n, 3);
 	free(constr);
 	free(conn);
-	return avail;
+	free(avail);
+	return (ret?true:false);
 }
 
 //gen bit graph from array graph using provided mask. Will return size of the graph to rn
@@ -856,7 +915,7 @@ void addMIS(long long S, long long I, int k, char* X, long long* graph, int n)
 }
 
 //Colorize the graph using David Eppstein algorithms
-int* DavidEppColorize(int* graph, int n)
+int* DavidEppColorize(int* cols, int* graph, int n)
 {
 	if (n <= MAXCALCSIZE)
 	{
@@ -919,7 +978,6 @@ int* DavidEppColorize(int* graph, int n)
 		}
 
 		int col;
-		int* cols = (int*)malloc(sizeof(int) * n);
 		col = colc[max - 1];
 		long long s = max - 1, dist;
 		for (i = max - 1; i >= 0 && i < max; i--)
@@ -945,32 +1003,30 @@ int* DavidEppColorize(int* graph, int n)
 }
 
 //main colourizing algorithm
-int* mainColorizer(int* graph, int n)
+int* mainColorizer(int* cols, int* graph, int n)
 {
-	int* cols;
 	int i, j;
+	bool fl;
 	if (isIndep(graph, n))
 	{
-		cols = (int*)malloc(sizeof(int) * n);
 		for (i = 0; i < n; i++)
-			cols[i] = 0;
+			cols[i] = 1;
 	}
 	else
 	{
 		if (isClique(graph, n))
 		{
-			cols = (int*)malloc(sizeof(int) * n);
 			for (i = 0; i < n; i++)
 				cols[i] = i;
 		}
 		else
 		{
-			cols = isBin(graph, n);
-			if (!cols)
+			fl = isBin(cols, graph, n);
+			if (!fl)
 			{
-				cols = isTri(graph, n);
-				if (!cols)
-					cols = DavidEppColorize(graph, n);
+				fl = isTri(cols, graph, n);
+				if (!fl)
+					fl = DavidEppColorize(cols, graph, n);
 			}
 		}
 	}
@@ -979,20 +1035,28 @@ int* mainColorizer(int* graph, int n)
 
 int main()
 {
-	int n;
-	scanf("%i", &n);
-	if (n <= 100)
+	while (1)
 	{
-		int* graph = (int*)malloc(sizeof(int) * n * n);
-		int i, j;
-		for (i = 0; i < n; i++)
-			for (j = 0; j < n; j++)
-			{
-				scanf("%i", graph + i * n + j);
-				if (i == j)
-					graph[i * n + j] = 0;
-			}
-
+		int n;
+		scanf("%i", &n);
+		if (n <= 100)
+		{
+			int* graph = TMALLOC(int, n * n);
+			int* cols = TMALLOC(int, n);
+			int i, j;
+			for (i = 0; i < n; i++)
+				for (j = 0; j < n; j++)
+				{
+					scanf("%i", graph + i * n + j);
+					if (i == j)
+						graph[i * n + j] = 0;
+				}
+			mainColorizer(cols, graph, n);
+			if (cols)
+				for (i = 0; i < n; i++)
+					printf("%i ", cols[i]);
+		}
+		printf("\n");
 	}
 	return 0;
 }
